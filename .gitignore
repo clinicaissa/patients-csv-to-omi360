@@ -101,4 +101,4 @@ ENV/
 .mypy_cache/
 
 # ISSA files
-patients.csv
+patient*.csv*
