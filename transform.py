@@ -38,20 +38,21 @@ SRC_COLS_DATETIME = ['Fecha Nacimiento', 'Fecha Inscripcion']
 def SRC_DATE_PARSER(date):
     # Final date
     parsed = None
-    date = date.replace("/", "")
-    # Correct date
-    if len(date) != 6 or len(date) != 8:
-        # Replace full years
-        re.sub(r"19(\d{2})", r"\1", date)
-    # Add slashes
-    date = date[:2] + "/" + date[2:4] + "/" + date[4:]
-    # Two-digit year
-    if len(date) == 8 and re.match("^\d{2}/\d{2}/\d{2}$", date):
-        parsed = pd.datetime.strptime(date, "%d/%m/%y")
-    # Four-digit year
-    if len(date) == 10:
-        parsed = pd.datetime.strptime(date, "%d/%m/%Y")
-    # Final result
+    if isinstance(date, str):
+        date = date.replace("/", "")
+        # Correct date
+        if len(date) != 6 or len(date) != 8:
+            # Replace full years
+            re.sub(r"19(\d{2})", r"\1", date)
+        # Add slashes
+        date = date[:2] + "/" + date[2:4] + "/" + date[4:]
+        # Two-digit year
+        if len(date) == 8 and re.match("^\d{2}/\d{2}/\d{2}$", date):
+            parsed = pd.datetime.strptime(date, "%d/%m/%y")
+        # Four-digit year
+        if len(date) == 10:
+            parsed = pd.datetime.strptime(date, "%d/%m/%Y")
+        # Final result
     return parsed
 
 
