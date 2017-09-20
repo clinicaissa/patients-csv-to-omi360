@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+# Name: CSV of Patients to OMI360 transformation script
+# Description: The script allows to transform an export of the current
+# database of insurance policies owners and beneficiaries into the format
+# required by Stacks.es OMI360 product. Requires the export in a delimited
+# CSV of the owners and beneficiaries
+#
+# Usage: python transform.py <owners_file> <beneficiaries_file>
 import sys
 import os
 import re
@@ -11,6 +18,10 @@ import fileinput
 
 # Constants
 CURRENT_DATE_NP = np.datetime64(datetime.datetime.now())
+"""
+Current date and time to detect past and future times
+"""
+
 # # Source parameters
 SRC_COL_DELIMITER = "\t"
 SRC_ROW_DELIMITER = "\n"
