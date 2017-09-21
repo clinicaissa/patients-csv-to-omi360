@@ -26,12 +26,12 @@ Current date and time to detect past and future times
 SRC_COL_DELIMITER = "\t"
 SRC_ROW_DELIMITER = "\n"
 SRC_QUOTE_CHAR = "\""
-SRC_COLS_DROP = [
+SRC_BEN_COLS_DROP = [
     'FECHANACIMI',  # No longer used
     'FECHAINSCRI',  # No longer used
     'Empresa',      # All ones
 ]
-SRC_COLS_RENAME = {
+SRC_BEN_COLS_RENAME = {
     "CENTRO": "CENTRO",
     "Nombre": "NOMBRE",
     "Sexo": "SEXO",
@@ -42,34 +42,49 @@ SRC_COLS_RENAME = {
     "E.Mail": "EMAIL",
     "N.Poliza": "NUM_POLIZA"
 }
-SRC_COLS_DATETIME = ['Fecha Nacimiento', 'Fecha Inscripcion']
+SRC_BEN_COLS_DATETIME = ['Fecha Nacimiento', 'Fecha Inscripcion']
 
+SRC_OWN_COLS_DATETIME = ['Fecha Alta', 'Fecha Baja']
 
 # # # Parser
 def SRC_DATE_PARSER(date):
+    if pd.isnull(date):
+        return date
     # Final date
-    parsed = None
-    if isinstance(date, str):
-        date = date.replace("/", "")
-        # Correct date
-        if len(date) != 6 or len(date) != 8:
-            # Replace full years
-            re.sub(r"19(\d{2})", r"\1", date)
-        # Add slashes
-        date = date[:2] + "/" + date[2:4] + "/" + date[4:]
-        # Two-digit year
-        if len(date) == 8 and re.match("^\d{2}/\d{2}/\d{2}$", date):
-            parsed = pd.datetime.strptime(date, "%d/%m/%y")
-        # Four-digit year
-        if len(date) == 10:
-            parsed = pd.datetime.strptime(date, "%d/%m/%Y")
-        # Final result
+    date = date.replace("/", "")
+    # Correct date
+    if len(date) != 6 or len(date) != 8:
+        # Replace full years
+        re.sub(r"19(\d{2})", r"\1", date)
+    # Add slashes
+    date = date[:2] + "/" + date[2:4] + "/" + date[4:]
+    # Two-digit year
+    if len(date) == 8 and re.match("^\d{2}/\d{2}/\d{2}$", date):
+        parsed = pd.datetime.strptime(date, "%d/%m/%y")
+    # Four-digit year
+    if len(date) == 10:
+        parsed = pd.datetime.strptime(date, "%d/%m/%Y")
+    # Final result
     return parsed
 
 
 # # # Transformations
+def UNIFORM_NAMES(name):
+    # Multiple spaces are not allowed
+    name = re.sub(' +',' ', name).strip()
+    # Uniform quotation
+    name = name.replace('`', "'")
+    # No space after quotation
+    name = name.replace("' ", "")
+    # Title
+    name = name.title()
+    # Replace prepositions
+    name = name.replace(" Del", " del")
+    name = name.replace(" De", " de")
+    return name
+
 def SRC_TRF_NOMBRE(nombre):
-    return nombre.title() if isinstance(nombre, str) else nombre
+    return UNIFORM_NAMES(nombre) if isinstance(nombre, str) else nombre
 
 
 def SRC_TRF_EMAIL(email):
@@ -91,8 +106,24 @@ def SRC_TRF_NIF(nif):
     # NIF correction
     return nif.strip().replace("-", "").replace(" ", "").upper()
 
+def SRC_TRF_POBLACION(poblacion):
+    if isinstance(poblacion, str):
+        poblacion = UNIFORM_NAMES(poblacion)
+        poblacion = poblacion.replace("Mataro", "Mataró")
+    return poblacion
 
-SRC_TRANSFORMATIONS = {
+def SRC_TRF_CPOSTA(cposta):
+    # Check is an integer
+    if pd.isnull(cposta):
+        return cposta
+    try:
+        cposta = int(cposta)
+    except:
+        return np.NaN
+    return cposta
+
+
+SRC_BEN_TRANSFORMATIONS = {
     "CENTRO": SRC_TRF_CENTRO,
     "Nombre": SRC_TRF_NOMBRE,
     "E.Mail": SRC_TRF_EMAIL,
@@ -100,9 +131,22 @@ SRC_TRANSFORMATIONS = {
     "NIF": SRC_TRF_NIF
 }
 
-SRC_COLS_TYPES = {
+SRC_BEN_COLS_TYPES = {
     "CENTRO": "category",
     "Sexo": "category"
+}
+
+SRC_OWN_EXTRAS = {
+    "DIRE": ("DIRECCION", SRC_TRF_POBLACION),
+    "CPOSTA": ("POSTAL", SRC_TRF_CPOSTA),
+    "POBLA": ("POBLACION", SRC_TRF_POBLACION),
+    "PROVINNOM": ("PROVINCIA", SRC_TRF_NOMBRE),
+}
+
+SRC_OWN_COLS_TYPES = {
+    "CPOSTA": "category",
+    "PROVINNOM": "category",
+    "POBLA": "category"
 }
 
 # # Destination parameters
@@ -121,26 +165,26 @@ DST_COLS_OUTPUT = \
 
 # # # New columns transformations
 def DST_COL_APELLIDO1(apellidos):
-    return apellidos.split()[0].title() \
+    return SRC_TRF_NOMBRE(apellidos.split()[0]) \
         if isinstance(apellidos, str) else None
 
 
 def DST_COL_APELLIDO2(apellidos):
-    return " ".join(apellidos.split()[1:]).title() \
+    return SRC_TRF_NOMBRE(" ".join(apellidos.split()[1:])) \
         if isinstance(apellidos, str) else None
 
 
 def DST_COL_TIPO_DOCUMENTO(documento):
-    return 1 if isinstance(documento, str) else 0
+    return 1 if isinstance(documento, str) else np.NaN
 
 
 def DST_COL_ACTIVO(fecha_baja):
-    return False if isinstance(fecha_baja, np.datetime64) \
-        and fecha_baja > CURRENT_DATE_NP else True
+    return "NO" if isinstance(fecha_baja, np.datetime64) \
+        and fecha_baja > CURRENT_DATE_NP else "SI"
 
 
 def DST_COL_TELEFONO(telf):
-    telefono = 0
+    telefono = np.NaN
     if isinstance(telf, str):
         telfs = telf.strip().replace(".", "").split()
         for telf in telfs:
@@ -158,7 +202,7 @@ def DST_COL_TELEFONO(telf):
 
 
 def DST_COL_TMOVIL(telf):
-    telefono = 0
+    telefono = np.NaN
     if isinstance(telf, str):
         telfs = telf.strip().replace(".", "").split()
         for telf in telfs:
@@ -193,22 +237,24 @@ logging.basicConfig(
 
 # Read arguments
 args = sys.argv[1:]
-if len(args) == 0:
-    logging.error("Specify the file to transform")
-    logging.error("Usage: python transform.py <file_to_transform.csv>")
+if len(args) < 2:
+    logging.error("Specify the files to transform")
+    logging.error(
+        "Usage: python transform.py <beneficiaries_file> <owners_file>")
     sys.exit(1)
-input_file = args[0]
-logging.info("Using file %s" % input_file)
+beneficiaries_file = args[0]
+owners_file = args[1]
+logging.info("Using file %s as beneficiaries" % beneficiaries_file)
 
 # Read files
 # # Input file
-logging.info("Reading file %s" % input_file)
+logging.info("Reading file %s" % beneficiaries_file)
 patients = pd.read_table(
-    input_file,
+    beneficiaries_file,
     header=0,
     delimiter=SRC_COL_DELIMITER,
     quotechar=SRC_QUOTE_CHAR,
-    parse_dates=SRC_COLS_DATETIME,
+    parse_dates=SRC_BEN_COLS_DATETIME,
     date_parser=SRC_DATE_PARSER
 )
 logging.info(" - Set first row as header")
@@ -219,27 +265,27 @@ logging.info(" - Headers are %s", patients.columns)
 logging.info("=== Applying transformations ===")
 # # 1. Clean invalid columns
 logging.info("1. CLEAN invalid columns")
-logging.info("   Remove no-longer-used columns: %s", SRC_COLS_DROP)
-patients = patients.drop(SRC_COLS_DROP, 1)
+logging.info("   Remove no-longer-used columns: %s", SRC_BEN_COLS_DROP)
+patients = patients.drop(SRC_BEN_COLS_DROP, 1)
 # # 2. Rename columns
 logging.info("2. RENAME valid columns")
-patients.rename(inplace=True, columns=SRC_COLS_RENAME)
-logging.info("   Updated headers are %s", SRC_COLS_RENAME)
+patients.rename(inplace=True, columns=SRC_BEN_COLS_RENAME)
+logging.info("   Updated headers are %s", SRC_BEN_COLS_RENAME)
 # # 3. Internal formatting
 logging.info("3. READ COLUMNS format")
 logging.info("   Columns %s are datetimes",
-             list(map(SRC_COLS_RENAME.get, SRC_COLS_DATETIME)))
-for col, dtype in SRC_COLS_TYPES.items():
+             list(map(SRC_BEN_COLS_RENAME.get, SRC_BEN_COLS_DATETIME)))
+for col, dtype in SRC_BEN_COLS_TYPES.items():
     logging.info("   Column %s is type <%s>", col, dtype)
-    patients[SRC_COLS_RENAME.get(col, col)] = \
-        patients[SRC_COLS_RENAME.get(col, col)].astype(dtype)
+    patients[SRC_BEN_COLS_RENAME.get(col, col)] = \
+        patients[SRC_BEN_COLS_RENAME.get(col, col)].astype(dtype)
 # # 4. Extra columns
 logging.info("4. ADDING new columns")
 for col, creator in DST_COLS_GENERATED.items():
     src_col, creator = creator
     logging.info("   Creating column %s from column %s", col, src_col)
     # Apply creation transformation
-    src_col = SRC_COLS_RENAME.get(src_col, src_col)
+    src_col = SRC_BEN_COLS_RENAME.get(src_col, src_col)
     new_col = patients[src_col].apply(creator)
     # Set type
     if col in DST_COLS_TYPES:
@@ -259,16 +305,16 @@ for col, creator in DST_COLS_GENERATED.items():
     patients[col] = new_col
 # # 5. Format transformations
 logging.info("5. APPLYING COLUMN transformations")
-for col, transform in SRC_TRANSFORMATIONS.items():
+for col, transform in SRC_BEN_TRANSFORMATIONS.items():
     # Renaming
-    col = SRC_COLS_RENAME.get(col, col)  # Not renamed maybe
+    col = SRC_BEN_COLS_RENAME.get(col, col)  # Not renamed maybe
     logging.info("   Transforming column %s", col)
     # Apply transformation
     old_col = patients[col]
     new_col = old_col.apply(transform)
     # Set type
-    if col in SRC_COLS_TYPES:
-        new_col = new_col.astype(SRC_COLS_TYPES[col])
+    if col in SRC_BEN_COLS_TYPES:
+        new_col = new_col.astype(SRC_BEN_COLS_TYPES[col])
     # Check distribution if categorical
     if isinstance(old_col.dtype, pd.core.dtypes.dtypes.CategoricalDtype):
         logging.info("   -> Old distribution:")
@@ -293,8 +339,40 @@ for col, transform in SRC_TRANSFORMATIONS.items():
     # Save transformation
     patients[col] = new_col
 
-# # 6. Clean invalid rows
-logging.info("6. CLEAN invalid rows")
+# # 6. Mix data
+logging.info("6. ADD columns from owners file")
+# Read files
+# # Input file
+logging.info("Using file %s as owners" % owners_file)
+logging.info("Reading file %s" % owners_file)
+owners = pd.read_table(
+    owners_file,
+    header=0,
+    delimiter=SRC_COL_DELIMITER,
+    quotechar=SRC_QUOTE_CHAR,
+    parse_dates=SRC_OWN_COLS_DATETIME,
+    date_parser=SRC_DATE_PARSER
+)
+logging.info(" - Set first row as header")
+logging.info(" - Found %d records", len(owners))
+logging.info(" - Headers are %s", owners.columns)
+
+# Loop each owner and add its address
+for index, owner in owners.iterrows():
+    # Get number of policy
+    poliza = owner["NPOLIZA"]
+    # Generate new columns
+    cols = []
+    for col, extra in SRC_OWN_EXTRAS.items():
+        # Get new name and value
+        new_name, transformation = extra
+        cols.append((new_name, transformation(owner[col])))
+    # Append columns
+    for col, val in cols:
+        patients.loc[patients["NUM_POLIZA"] == poliza, col] = val
+
+# # 7. Clean invalid rows
+logging.info("7. CLEAN invalid rows")
 logging.info("   Rows without %s", DST_COLS_MANDATORY)
 # # # Null cleans
 for col in DST_COLS_MANDATORY:
@@ -305,13 +383,14 @@ for col in DST_COLS_MANDATORY:
     if patients[col].dtype == np.object:
         patients = patients[patients[col].map(len) > 0]
 logging.info("   -> Without empty strings: %d records", len(patients))
-# # 7. Write results
-logging.info("6. WRITING result")
+# # 8. Write results
+patients["POSTAL"] = patients["POSTAL"].fillna(0).astype(int)
+logging.info("8. WRITING result")
 logging.info("   ColDelimiter=%s | RowDelimiter=%s",
              DST_COL_DELIMITER, DST_ROW_DELIMITER)
 logging.info("   Export columns: %s", DST_COLS_OUTPUT)
-DST_FILE_NAME = ".".join(os.path.basename(input_file).split(".")[:-1])
-DST_FILE_EXT = os.path.basename(input_file).split(".")[-1]
+DST_FILE_NAME = ".".join(os.path.basename(beneficiaries_file).split(".")[:-1])
+DST_FILE_EXT = os.path.basename(beneficiaries_file).split(".")[-1]
 DST_FILE = DST_FILE_NAME + "_converted." + DST_FILE_EXT
 logging.info("   Export name: %s", DST_FILE)
 delimiter = DST_COL_DELIMITER
@@ -322,7 +401,7 @@ patients.to_csv(DST_FILE,
                 index=False,
                 columns=DST_COLS_OUTPUT,
                 sep=delimiter,
-                line_terminator=DST_ROW_DELIMITER+"\n",
+                line_terminator=DST_ROW_DELIMITER,
                 date_format="%d/%m/%Y")
 if len(DST_COL_DELIMITER) > 1:
     logging.info("Replacing temporary delimiter")
